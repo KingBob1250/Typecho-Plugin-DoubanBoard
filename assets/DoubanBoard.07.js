@@ -1,7 +1,8 @@
 // Author: 熊猫小A
 // Link: https://www.imalan.cn
+// Modified by: Leslie Lee
 
-console.log(`%c DoubanBoard 0.5 %c https://blog.imalan.cn/archives/168/`, `color: #fadfa3; background: #23b7e5; padding:5px 0;`, `background: #1c2b36; padding:5px 0;`);
+console.log(`%c DoubanBoard 0.6 %c https://blog.imalan.cn/archives/168/`, `color: #fadfa3; background: #23b7e5; padding:5px 0;`, `background: #1c2b36; padding:5px 0;`);
 
 
 var curBooks_read = 0;
@@ -70,34 +71,23 @@ DoubanBoard = {
 
     loadBooks: function (status) {
         if ($(`.douban-book-list[data-status="` + status + `"]`).length < 1) return;
-        $(`#loadMoreBooks_` + status).html("加载中...");
+        $("#loadMoreBooks_" + status).html("加载中...");
+
         var curBooks;
         if (status == 'read') curBooks = curBooks_read;
         else if (status == 'reading') curBooks = curBooks_reading;
         else curBooks = curBooks_wish;
-        var api = window.DoubanAPI + "?type=book&from=" + String(curBooks) + "&status=" + status;
-        $.getJSON(api, function (result) {
-            $(`#loadMoreBooks_` + status).html("加载更多");
+
+        $.getJSON(window.DoubanAPI + "?type=book&from=" + String(curBooks) + "&status=" + status, function (result) {
+            $("#loadMoreBooks_" + status).html("加载更多");
             if (result.length < DoubanPageSize) {
-                $(`#loadMoreBooks_` + status).html("没有啦");
+                $("#loadMoreBooks_" + status).html("没有啦");
             }
             $.each(result, function (i, item) {
-                var html = `<div id="doubanboard-book-item-` + String(curBooks) + `" class="doubanboard-item">
-                            <div class="doubanboard-thumb" style="background-image:url(`+ item.img + `)"></div>
-                            <div title="点击显示详情" class="doubanboard-title">`+ item.title + `</div>
-                            <div class="doubanboard-info">
-                                <p class="doubanboard-info-basic">
-                                书名：`+ item.title + `<br>
-                                评分：`+ item.rating + `<br>
-                                作者：`+ item.author + `<br>
-                                链接：<a target="_blank" href="`+ item.link + `">豆瓣阅读</a><br>
-                                简介：<br>
-                                </p>
-                                <p class="doubanboard-info-summary">
-                                    `+ item.summary + `
-                                </p>
-                            </div>
-                        </div>`;
+                var html = `<a href="` + item.url + `" target="_blank" id="doubanboard-book-item-` + String(curBooks) + `" class="doubanboard-item">
+                            <div class="doubanboard-thumb" style="background-image:url(`+ item.img + `); background-position: center center;"></div>
+                            <div class="doubanboard-title">`+ item.name + `</div>
+                        </a>`;
                 $(`.douban-book-list[data-status="` + status + `"]`).append(html);
                 if (status == 'read') curBooks_read++;
                 else if (status == 'reading') curBooks_reading++;

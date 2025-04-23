@@ -5,7 +5,8 @@
  * 获取、更新缓存，返回书单、影单
  *
  * @author      熊猫小A | AlanDecode
- * @version     0.1
+ * @modified 	Leslie Lee
+ * @version     0.6
  */
 if (!defined('__TYPECHO_ROOT_DIR__')) exit;
 
@@ -32,16 +33,59 @@ function curl_file_get_contents($_url, $type='www')
 class DoubanAPI
 {
     /**
-     * 从豆瓣接口获取书单数据
+     * 从豆瓣网页解析书单数据
      *
      * @access  private
      * @param   string    $UserID     豆瓣ID
-     * @return  array     返回 JSON 解码后的 array
+     * @return  array     返回格式化 array
+     */
+    private static function __getBookRawDataHelper($UserID, $Type='collect')
+    {
+        $api = 'https://book.douban.com/people/' . $UserID . '/' . $Type;
+        $data = array();
+        while ($api != null) {
+            $raw = curl_file_get_contents($api, 'book');
+            error_log(print_r($raw, true));
+
+            if ($raw == null || $raw == "") {
+                break;
+            }
+
+            $doc = str_get_html($raw);
+
+            $itemArray = $doc->find("li.subject-item");
+            foreach ($itemArray as $v) {
+                $t = $v->find("div.info h2", 0);
+                $book_name = str_replace(array(" ", "　", "\t", "\n", "\r"),
+                    array("", "", "", "", ""), $t->text());
+                $book_img = $v->find("div.pic a img", 0)->src;
+
+                // 使用 wp 接口解决防盗链
+                $book_img = 'https://i0.wp.com/' . str_replace(array('http://', 'https://'), '', $book_img);
+
+                $book_url = $t->find("a", 0)->href;
+                $data[] = array("name" => $book_name, "img" => $book_img, "url" => $book_url);
+            }
+            $url = $doc->find("span.next a", 0);
+            if ($url) {
+                $api = "https://book.douban.com" . $url->href;
+            } else {
+                $api = null;
+            }
+        }
+        return $data;
+    }
+
+    /**
+     * 从豆瓣网页获取想看、已看、在看信息
      */
     private static function __getBookRawData($UserID)
     {
-        $api = 'https://api.douban.com/v2/book/user/' . $UserID . '/collections?apikey=054022eaeae0b00e0fc068c0c0a2102a&count=100';
-        return json_decode(curl_file_get_contents($api, 'book'), true);
+        $data = array();
+        $data['reading'] = self::__getBookRawDataHelper($UserID, 'do');
+        $data['wish'] = self::__getBookRawDataHelper($UserID, 'wish');
+        $data['read'] = self::__getBookRawDataHelper($UserID, 'collect');
+        return $data;
     }
 
     /**
@@ -62,7 +106,7 @@ class DoubanAPI
             }
 
             $doc = str_get_html($raw);
-            
+
             $itemArray = $doc->find("div.item");
             foreach ($itemArray as $v) {
                 $t = $v->find("li.title", 0);
@@ -160,7 +204,7 @@ class DoubanAPI
      * @param   int       $ValidTimeSpan      有效时间，Unix 时间戳，s
      * @return  json      返回格式化书单
      */
-    public static function updateBookCacheAndReturn($UserID, $PageSize, $From, $ValidTimeSpan, $status)
+    public static function updateBookCacheAndReturn($UserID, $PageSize, $From, $ValidTimeSpan, $status='read')
     {
         if (!$UserID) {
             return json_encode(array());
@@ -171,42 +215,21 @@ class DoubanAPI
         if ($cache == -1 || $cache == 1) {
             // 缓存无效或者过期，重新请求，重新写入
             $raw = self::__getBookRawData($UserID);
-            $data_read = array();
-            $data_reading = array();
-            $data_wish = array();
-            foreach ($raw['collections'] as $value) {
-                $item = array("img" => str_replace("/view/subject/m/public/", "/lpic/", $value['book']['image']),
-                    "title" => $value['book']['title'],
-                    "rating" => $value['book']['rating']['average'],
-                    "author" => $value['book']['author'][0],
-                    "link" => $value['book']['alt'],
-                    "summary" => $value['book']['summary']);
-
-                $item['img'] = 'https://i0.wp.com/' . str_replace(array('http://', 'https://'), '', $item['img']);
-
-                if ($value['status'] == 'read') {
-                    array_push($data_read, $item);
-                } elseif ($value['status'] == 'reading') {
-                    array_push($data_reading, $item);
-                } elseif ($value['status'] == 'wish') {
-                    array_push($data_wish, $item);
-                }
-            }
-
-            $cache = array('time' => time(),
-                'data' => array('read' => $data_read, 'reading' => $data_reading, 'wish' => $data_wish));
-
-            // 如果 cache 全空，很可能没有获取到数据，时间戳置 1
-            if (count($data_read) == 0 && count($data_reading) == 0 && count($data_wish) == 0) {
-                $cache['time'] = 1;
-            }
-
+            $cache = array('time' => time(), 'data' => $raw);
             file_put_contents(__DIR__ . '/cache/book.json', json_encode($cache));
         }
 
-        $data = $cache['data'][$status];
-        $total = count($data);
+        $data = $cache['data'];
 
+        // 没有数据，需要在下次刷新
+        if (count($data['reading'])==0 && count($data['wish'])==0 && count($data['read'])==0) {
+            $cache['time'] = 1;
+            file_put_contents(__DIR__ . '/cache/book.json', json_encode($cache));
+            return json_encode(array());
+        }
+
+        $data = $data[$status];
+        $total = count($data);
         if ($From < 0 || $From > $total - 1) {
             echo json_encode(array());
         } else {
@@ -316,7 +339,7 @@ public static function updateMovieCacheAndReturn($UserID, $PageSize, $From, $Val
 
         // if($needUpdate)
         //     file_put_contents($FilePath, json_encode($cache));
-        
+
         if ($needUpdate) {
             $cache[$Type][$ID]['time'] = time();
             if ($Type == 'book') {
@@ -326,7 +349,7 @@ public static function updateMovieCacheAndReturn($UserID, $PageSize, $From, $Val
             }
             file_put_contents($FilePath, json_encode($cache));
         }
-        
+
         return json_encode($cache[$Type][$ID]['data']);
     }
 }

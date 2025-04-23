@@ -6,11 +6,12 @@
  * 
  * @package DoubanBoard
  * @author 熊猫小A
- * @version 0.5
+ * @modified Leslie Lee
+ * @version 0.6
  * @link https://www.imalan.cn
  */
 
-define('DoubanBoard_Plugin_VERSION', '0.5');
+define('DoubanBoard_Plugin_VERSION', '0.6');
 
 class DoubanBoard_Plugin implements Typecho_Plugin_Interface
 {
